@@ -63,7 +63,7 @@ void setup()
 
   Serial.begin(115200);
   Serial.println(F("AssistNow Example"));
-
+  WiFi.setTxPower(WIFI_POWER_8_5dBm); 
   while (Serial.available()) Serial.read(); // Empty the serial buffer
   Serial.println(F("Press any key to begin..."));
   while (!Serial.available()); // Wait for a keypress
@@ -73,6 +73,7 @@ void setup()
   //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
   // Connect to the GNSS.
    // Manually initialize I2C
+  
   Wire.begin(PIN_I2C2_SDA, PIN_I2C2_SCL, I2C_FREQUENCY);
 
   // Scan I2C bus
