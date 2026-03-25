@@ -1,24 +1,15 @@
 //TO DO:
-//1.RTC
+//APRS PARAMETERS
+String callsign = "9V1WP";
+String callsign_suffix = "-11";
+uint8_t callsign_ssid = 11;
+String comment_suffix = "FPV@1.28GHz";
+String boot_message = "BEAR13 Project";
 
-// include the libraries
-#include <RadioLib.h>
-#include <SPI.h>
-#include <Wire.h>
+//APRS
+uint16_t msg_id = 0;
+bool freefall=false;
 
-
-#include <Adafruit_I2CDevice.h>
-#include <Adafruit_I2CRegister.h>
-
-#include <WiFi.h>
-#include <HTTPClient.h>
-#include "secrets.h"
-
-
-//HEATER AND CUTTER PINS
-#define PIN_HEATER 25
-#define PIN_CUTTER 26
-bool heaterOn = false;  //for use in telemetry only
 
 //CUTTER CONFIG
 const float CUT_ALTITUDE = 30000 * 1000.0f;  //input as  meters, this will be converted to mm
@@ -47,71 +38,40 @@ RTTYState rttyState = RTTY_IDLE;
 unsigned long rttyStateStartTime = 0;
 const unsigned long RTTY_IDLE_TIME = 30000;      // 20 seconds between transmissions
 const unsigned long RTTY_START_TIME = 1000;      // 250 ms idle signal
-const unsigned long RTTY_TRANSMIT_TIME = 15000;  // give 15000 to tiemeout transmission
+const unsigned long RTTY_TRANSMIT_TIME = 6000;  // give 6000 to tiemeout transmission
 const unsigned long RTTY_COOLDOWN_TIME = 250;    // 250 second cooldown
 
 
-// Define VSPI pins
-#define VSPI_SCK 18
-#define VSPI_MISO 19
-#define VSPI_MOSI 23
-#define VSPI_SS 5
+// Global variables for UART BRIDGE
+float BV = 0.0f;
+float Current = 0;
+bool heaterOn = false;
+float BatTemp = 0;
 
-//I2C sensors setup
-#define I2C_SDA 21
-#define I2C_SCL 22
-
-//BATTERY MONITOR//
-//define analog read for battery voltage
-#define batt_pin 32
-// Constants for battery monitoring
-float battery_voltage = 0.0f;
-const float ADC_MAX = 4095.0f;              // 12-bit ADC (ESP32)
-const float ADC_REF_VOLTAGE = 3.3f;         // Reference voltage
-const float VOLTAGE_DIVIDER = 8.0f / 3.3f;  // Voltage divider ratio
-const int NUM_SAMPLES = 15;                 // Number of samples to average
+//RADIO PINS
 
 // GPIO where the DS18B20 is connected to
-#include <OneWire.h>
-#include <DallasTemperature.h>
+//#include <OneWire.h>
+//#include <DallasTemperature.h>
 // Setup a oneWire instance to communicate with any OneWire devices
-#define oneWireBus 17
+//#define oneWireBus 17
 // Used to be GPIO35 but it's INPUT only so switched to GPIO17 or the seventh pin on the left side of the esp32
-OneWire oneWire(oneWireBus);
+//OneWire oneWire(oneWireBus);
 // Pass our oneWire reference to Dallas Temperature sensor
-DallasTemperature onesense(&oneWire);
+//DallasTemperature onesense(&oneWire);
 
 //MCP9600 thermocouple
-#include "Adafruit_MCP9600.h"
-#define MCP9600_ADDR (0x60)
-Adafruit_MCP9600 mcp;
-const int thermocouple_wakeup = 500;  //give 250ms to wakeup
-float cold_junc = 0.0f;
-uint16_t thermocouple_adc = 0;
+//#include "Adafruit_MCP9600.h"
+//#define MCP9600_ADDR (0x60)
+//Adafruit_MCP9600 mcp;
+//const int thermocouple_wakeup = 500;  //give 250ms to wakeup
+//float cold_junc = 0.0f;
+//uint16_t thermocouple_adc = 0;
 
 //MS5611 baro
 #include "MS5611.h"
 MS5611 MS5611(0x77);
 //int16_t baro_temp = 30;  //needs to be signed due to -ve temps
-
-
-//ASM330 IMU setup
-#include <ASM330LHHSensor.h>
-#define ASM330_ADDR (0x6A)
-ASM330LHHSensor AccGyr(&Wire, ASM330_ADDR);
-
-int32_t accelerometer[3] = {};
-int32_t gyroscope[3] = {};
-int32_t Ax = 0;
-int32_t Ay = 0;
-int32_t Az = 0;
-int32_t Gx = 0;
-int32_t Gy = 0;
-int32_t Gz = 0;
-
-#ifndef MSBFIRST
-#define MSBFIRST SPI_MSBFIRST
-#endif
 
 
 //GPS
@@ -140,115 +100,168 @@ const char* ntpServer = "time.nist.gov";
 const char* ntpServer_01 = "1.pool.ntp.org";
 const char* ntpServer_02 = "0.pool.ntp.org";
 
-long latitude = 0;   //CHANGE BEFORE FLIGHT
-long longitude = 0;  //CHANGE BEFORE FLIGHT
-long altitude = 0;
-long speed = 0;
-long heading = 0;
+// GPS
+// Fix Type
+// 0: No fix
+// 1: Dead reckoning
+// 2: 2D
+// 3: 3D
+// 4: GNSS + Dead reckoning
+// 5: Time only
 
-//RTC stuff
-uint16_t hour = 0;
-uint16_t minute = 0;
-uint16_t second = 0;
+byte fixType = 0;
+float glatitude = 1.3521;   //CHANGE BEFORE FLIGHT
+float glongitude =  103.8198;  //CHANGE BEFORE FLIGHT
+float galtitude = 0;
+float paltitudeMSL=0;
+float gspeed = 0;
+uint16_t gheading = 0;
+
+//RTC stuff [RBF]
+uint16_t tyear=2026;
+uint8_t tmonth=3;
+uint8_t tday=24;
+uint16_t thour = 0;
+uint16_t tminute = 0;
+uint16_t tsecond = 0;
+uint16_t tms = 0;
+unsigned long long tsync = 0;
 
 
-const int RF_OUTPUT_POWER = 20;
-const float RF_FREQUENCY = 432.600f;
-const float TCXO_VOLTAGE = 2.4f;
-String RTTY_PREAMBLE = "$$";
-const int RTTY_PREAMBLE_LENGTH = 8;  // number of RTTY_PREAMBLE repetitions
-const int RTTY_FREQUENCY_SHIFT = 425;
-const int RTTY_BAUD_RATE = 100;
-const int RTTY_STOP_BITS = 2;
+//CAM SWITCH PWM SETTINGS
+// Hardware PWM Settings
+const int ledcChannel = 0;
+const int ledcFreq = 50;      // 50Hz (20ms period)
+const int ledcRes = 13;       // 13-bit resolution (0-8191)
+
+
 
 //RTTY PACKET FORMAT AND VARIABLE DECLARATIONS
 uint8_t frame_counter = 0;
-char thermocouple_temp_str[10];
-float thermocouple_temp = 0.0f;
-char ambient_temp_str[10];
-float ambient_temp = 0.0f;
+float ambient_temp = 0.0f; //barometer temp
+float external_temp=0.0f; //type K temp
+float bat_temp=0.0f; //battery temperature from UART bridge
 uint16_t baro_press = 0;
-String payload_info = "012345789ABR";
-
-//0->PayloadID/callsign
-//1->Tx counter
-//2->Time
-//3,4,5->Lat long Alt
-//7->speed
-//8->heading
-//9->battery Voltage
-
-//A->Internal Temp
-//B->External Temp
-//R->Pressure
-//DOUBLE CHECK THE PAYLOAD TYPE DEFINITIONS!!!!
-//"$$9V1WP,%u,%u:%u:%u,%.4f,%.4f,%.4f,%.2f,%.2f,%.2f,%.2f,%.2f,%u,%s,%d",
-//payload struct
-struct Payload {
-  uint8_t frame_counter;
-  uint16_t hour;
-  uint16_t minute;
-  uint16_t second;
-  float latitude_processed;
-  float longitude_processed;
-  float altitude_processed;
-  float speed_processed;
-  float heading_processed;
-  float battery_voltage;
-  char thermocouple_temp_str[10];  //Variable for ext temp remember that char is different from char*(char array) which is this
-  char ambient_temp_str[10];       //variable for internal temp/onewire temp sensor
-  uint16_t baro_press;
-  String payload_info;
-  bool heaterOn;  //on telemetry it will be 1 or 0
-
-  /*
-        accelerometer[0]+","+
-        accelerometer[1]+","+
-        accelerometer[3]+","+
-        gyroscope[0]+","+
-        gyroscope[1]+","+
-        gyroscope[3];
-        */
-};
 
 
 
+//////////////////////////////////////////////////////
+//// Pinmap
+//////////////////////////////////////////////////////
+
+#define PIN_DTR 0
+// Define VSPI pins
+#define VSPI_SCK 18
+#define VSPI_MISO 19
+#define VSPI_MOSI 23
+#define VSPI_SS 27
+
+//I2C sensors setup
+#define I2C_SDA 21
+#define I2C_SCL 22
+
+//UART pins (header pins) remmeber to pin matrix
+//purpose is to serve as UART bridge with arduino
+//THIS IS THE SDA/SCL ON THE 1X06 JST HEADER
+#define UART_TX 32 //I2C SDA
+#define UART_RX 33 //I2C SCL
+
+//Mavlink
+#define UART2_TX 16
+#define UART2_RX 17
+
+//Camera Switch pins
+#define PIN_CAM_SWITCH 26
+
+//VTX_EN PIN
+#define PIN_VTX_EN 35
+
+//CUTTER EN PIN
+#define PIN_CUTTER 34
+
+//DRA818V PIN MAPPING
+#define PIN_RAD_PTT 2
+#define PIN_RAD_EN 13
+#define PIN_RAD_PW 12
+#define PIN_RAD_SQL 39 //sensor_vn
+#define PIN_RAD_TX 15 //HARDWARE FLIPPED ALREADY
+#define PIN_RAD_RX 14 //HARDWARE FLIPPED ALREADY
+#define PIN_TX_AUD 25
+#define PIN_RX_AUD 36 //sensor_VP
+
+// include the libraries
+#include <SPI.h>
+#include <Wire.h>
+
+
+//temperature sensr
+#include <Adafruit_MAX31856.h>
+// Initialize with Software SPI to force the specific VSPI pins
+Adafruit_MAX31856 maxthermo = Adafruit_MAX31856(VSPI_SS, VSPI_MOSI, VSPI_MISO, VSPI_SCK);
 
 
 
-// SX1278 has the following connections:
-// NSS pin:   5
-// DIO0 pin:  33
-// RESET pin: 2
-// DIO1 pin:  13
-#define RADIO_TXEN 27  //this is to enable the outer Power Amplifier, if you do RX in the future, it will be good to have the RXen pin too.
-#define RADIO_DIO2 14  //dio2 pijn
 
-SX1268 radio = new Module(VSPI_SS, 33, 2, 13);
-// get pointer to the common layer
-PhysicalLayer* phy = (PhysicalLayer*)&radio;
+#include <Adafruit_I2CDevice.h>
+#include <Adafruit_I2CRegister.h>
 
-// create AFSK client instance using the FSK module
-// this requires connection to the module direct
-// input pin, here connected to GPIO12
-// SX127x/RFM9x:  DIO2
-// RF69:          DIO2
-// SX1231:        DIO2
-// CC1101:        GDO2
-// Si443x/RFM2x:  GPIO
-// SX126x/LLCC68: DIO2
-AFSKClient audio(&radio, RADIO_DIO2);
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include "secrets.h"
 
-// create AX.25 client instance using the AFSK instance
-AX25Client ax25(&audio);
-// create APRS client instance using the AX.25 client
-APRSClient aprs(&ax25);
-// create RTTY client instance using the FSK module
-RTTYClient rtty(&radio);
+
+//mavlink
+#include <MAVLink.h>
+HardwareSerial MavSerial(2);
+
+//APRS
+#include <APRSLite.h>
+
+
+////////////////////////////////////////////////////////
+//// DRA818
+//////////////////////////////////////////////////////
+#ifdef HW_ESP32S3
+#include "hal/ledc_types.h"
+#include "soc/ledc_periph.h"
+#include "soc/ledc_struct.h"
+#include "hal/gpio_hal.h"
+#include "esp_rom_gpio.h"
+ledc_dev_t *ledc = &LEDC;
+#else
+#include "soc/rtc_io_reg.h"
+#include "soc/rtc_cntl_reg.h"
+#include "soc/sens_reg.h"
+#include "soc/rtc.h"
+#include <driver/dac.h>
+#include <hal/dac_hal.h>
+#include <hal/dac_ll.h>
+#endif
+#include <SoftwareSerial.h>
+SoftwareSerial radioCtrl(PIN_RAD_RX, PIN_RAD_TX);
+
+//////////////////////////////////////////////////////
+//// WIFI
+//////////////////////////////////////////////////////
+#include <WiFi.h>
+#include <WiFiAP.h>
+#include <ESPmDNS.h>
+#include <WiFiUdp.h>
+#include <DynamicArduinoOTA.h>
+#include <UDPStream.h>
+#include <esp_wifi.h>
+
+UDPStream udpstream;
+
 
 void setup() {
   unsigned long currentMillis = millis();
   static unsigned long previousMillis = 0;
+  // Bug fix, pullup DTR so we can boot properly if we reset
+  pinMode(PIN_DTR, INPUT_PULLUP);
+
+
+
   Serial.begin(115200);
   if (currentMillis - previousMillis >= setup_interval) {
     previousMillis = currentMillis;
@@ -290,23 +303,35 @@ void setup() {
   Serial.println("Configuration complete.");
   */
 
-  Assistnow_setup();
+  Assistnow_setup(); 
   GNSS_setup();
   //thermocouple_setup();
-  radio_setup();
+  //radio_setup();
   baro_setup();
-  Bat_temp_setup();
-  setup_heater();
-  Cutter_setup();
+  //Bat_temp_setup();
+  //setup_heater();
+  //Cutter_setup();
+  setup_cam_switch();
+  setup_temp();
+  setup_uart_bridge();
+
+  // Will transmit boot message, ensure dra818 is ready
+  //setup DRA818 first before APRS.
+  Serial.println("DRA818");
+  setup_dra818();
+  Serial.println("APRS");
+  setup_aprs();
 
   Serial.print("All setup");
+
+  setup_mavlink();
 }
 
 void loop() {
 
-  task_heater();
+  //task_heater();
 
-  Cutter();
+  //Cutter();
 
 
   //checks the battery temp every 5s, changes state every 5s, also checks if RTTY is going to be transmitted.
@@ -318,10 +343,17 @@ void loop() {
     updateSensors();
   }
 
+  // Update OSD every 500ms for smooth display
+  static unsigned long lastMavUpdate = 0;
+  if (millis() - lastMavUpdate >= 2000) {
+    task_mavlink_osd();
+    lastMavUpdate = millis();
+  }
+
   RTTY_TX();
 }
 
-
+//THIS FUNCTION UPDATES SENSORS ACCORDING TO RTTY_STATE
 void updateSensors() {
   unsigned long currentMillis = millis();
   static unsigned long previousMillis = 0;
@@ -333,16 +365,15 @@ void updateSensors() {
   }
   if (currentMillis - previousGNSSMillis >= GNSS_interval) {  //this happens every 1000ms
     read_gnss();
+    handle_uart_receiver();
     previousGNSSMillis = currentMillis;
   }
-  if (currentMillis - previousBATTEMPMillis >= Bat_temp_interval) {  //this happens every 750ms
-    read_bat_temp();
-    //this is because the conversion time is <750ms
-  }
+
   if (currentMillis - previousMillis >= sensor_interval) {  //this happens every 250ms
     read_baro();
+    task_temp();
     //readIMU();
-    read_battery();
+    //read_battery();
     previousMillis = currentMillis;
   }
   /*

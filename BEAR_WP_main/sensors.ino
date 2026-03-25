@@ -19,16 +19,12 @@ void GNSS_setup() {
   myGNSS.saveConfiguration();
 }
 
-void IMUsetup() {
-  AccGyr.begin();
-  AccGyr.Enable_X();
-  AccGyr.Enable_G();
-}
 
+/*
 void thermocouple_setup() {
   Serial.println("MCP9600 HW test");
   mcp.begin(MCP9600_ADDR);
-  /* Initialise the driver with I2C_ADDRESS and the default I2C bus. */
+  Initialise the driver with I2C_ADDRESS and the default I2C bus. 
   if (!mcp.begin(MCP9600_ADDR)) {
     Serial.println("Sensor not found. Check wiring!");
   }
@@ -67,6 +63,8 @@ void thermocouple_setup() {
   Serial.println(F("------------------------------"));
 }
 
+*/
+
 void baro_setup() {
   unsigned long currentMillis = millis();
   static unsigned long previousMillis = 0;
@@ -103,52 +101,89 @@ void baro_setup() {
 }
 
 //setup onewire temp sensor
+/*
 void Bat_temp_setup() {
   onesense.begin();
   Serial.print("Onewire setup");
 }
+*/
 
+void setup_temp() {
+  Serial.println(F("[TEMP] Initializing MAX31856 (Type K) on VSPI..."));
 
+  if (!maxthermo.begin()) {
+    Serial.println(F("[TEMP ERROR] Check MAX31856 wiring!"));
+    while (1) delay(10);
+  }
+
+  // Set to Type K (Very important!)
+  maxthermo.setThermocoupleType(MAX31856_TCTYPE_K);
+  
+  Serial.print(F("[TEMP] Thermocouple type: "));
+  switch (maxthermo.getThermocoupleType()) {
+    case MAX31856_TCTYPE_K: Serial.println(F("K")); break;
+    default: Serial.println(F("Unknown")); break;
+  }
+}
+
+void task_temp() {
+  // Read the temperature
+  float temp = maxthermo.readThermocoupleTemperature();
+  //float internal = maxthermo.readColdJunctionTemperature();
+
+  // Update global variable for APRS/MAVLink
+  external_temp = temp;
+
+  // Check for faults (Open circuit, short to GND, etc.)
+  uint8_t fault = maxthermo.readFault();
+  if (fault) {
+    if (fault & MAX31856_FAULT_CJRANGE) Serial.println(F("Cold Junction Range Fault"));
+    if (fault & MAX31856_FAULT_TCRANGE) Serial.println(F("Thermocouple Range Fault"));
+    if (fault & MAX31856_FAULT_CJHIGH)  Serial.println(F("Cold Junction High Fault"));
+    if (fault & MAX31856_FAULT_CJLOW)   Serial.println(F("Cold Junction Low Fault"));
+    if (fault & MAX31856_FAULT_TCHIGH)  Serial.println(F("Thermocouple High Fault"));
+    if (fault & MAX31856_FAULT_TCLOW)   Serial.println(F("Thermocouple Low Fault"));
+    if (fault & MAX31856_FAULT_OVUV)    Serial.println(F("Over/Under Voltage Fault"));
+    if (fault & MAX31856_FAULT_OPEN)    Serial.println(F("Thermocouple Open Circuit"));
+  }
+
+  /* Serial.print(F("Hot: ")); Serial.print(temp);
+  Serial.print(F(" C, Cold: ")); Serial.print(internal); Serial.println(F(" C"));
+  */
+}
 
 void read_gnss() {
-  latitude = myGNSS.getLatitude();
-  Serial.print(F("Lat: "));
-  Serial.print(latitude);
 
-  longitude = myGNSS.getLongitude();
-  Serial.print(F(" Long: "));
-  Serial.print(longitude);
-  Serial.print(F(" (degrees * 10^-7)"));
 
-  altitude = myGNSS.getAltitude();
-  Serial.print(F(" Alt: "));
-  Serial.print(altitude);
-  Serial.print(F(" (mm)"));
+  // 1. Latitude/Longitude: Keep as Decimal Degrees for the DDM conversion
+  glatitude = myGNSS.getLatitude() / 10000000.0f;
+  glongitude = myGNSS.getLongitude() / 10000000.0f;
 
-  speed = myGNSS.getGroundSpeed();
-  Serial.print(F(" Speed: "));
-  Serial.print(speed);
-  Serial.print(F(" (mm/s)"));
+  // 2. Altitude: Store in Meters
+  galtitude = myGNSS.getAltitude() / 1000.0f; 
 
-  heading = myGNSS.getHeading();
-  Serial.print(F(" Heading: "));
-  Serial.print(heading);
-  Serial.print(F(" (degrees * 10^-5)"));
+  // 3. Speed: Store in km/h
+  // Raw mm/s / 277.78 = km/h
+  gspeed = myGNSS.getGroundSpeed() / 277.78f; 
 
-  hour = myGNSS.getHour();
-  minute = myGNSS.getMinute();
-  second = myGNSS.getSecond();
+  // 4. Heading: Degrees
+  gheading = myGNSS.getHeading() / 100000.0f;
+
+  // Debugging
+  Serial.printf("Lat: %.6f, Lon: %.6f, Alt: %.1fm, Spd: %.1fkt\n", 
+                glatitude, glongitude, galtitude, gspeed);
 }
+
 
 
 void read_baro() {
   MS5611.read();
   //since oversampling of 8.12millis in effect do take note of interval of sensor reads
-  thermocouple_temp = MS5611.getTemperature();  //reads ambient temp and passes to global variable thermocouple_temp
+  ambient_temp = MS5611.getTemperature();  //reads ambient temp and passes to global variable thermocouple_temp
   baro_press = MS5611.getPressure();            //reads baro press and passes to global variable baro_press
-
+  paltitudeMSL=MS5611.getAltitude();
   Serial.print("Baro temperature");
-  Serial.println(thermocouple_temp);
+  Serial.println(ambient_temp);
   Serial.print("Baro pressure:");
   Serial.println(baro_press);
 }
@@ -186,6 +221,7 @@ void read_thermocouple() {
 }
 */
 
+/*
 void read_bat_temp() {
   onesense.requestTemperatures();
   ambient_temp = onesense.getTempCByIndex(0);
@@ -215,3 +251,4 @@ void readIMU() {
   Gy = gyroscope[1];
   Gz = gyroscope[2];
 }
+*/
