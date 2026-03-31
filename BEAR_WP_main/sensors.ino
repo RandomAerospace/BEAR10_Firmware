@@ -7,14 +7,20 @@ void GNSS_setup() {
   }
 
   // Let's read the new dynamic model to see if it worked
+  if (myGNSS.setDynamicModel(DYN_MODEL_AIRBORNE2g) == false) {
+    Serial.println("GNSS: dynamic platform setting failed");
+  }
+  // Let's read the new dynamic model to see if it worked
   uint8_t newDynamicModel = myGNSS.getDynamicModel();
   if (newDynamicModel == DYN_MODEL_UNKNOWN) {
-    Serial.println(F("*** Warning: getDynamicModel failed ***"));
+    Serial.println("GNSS: dynamic platform recall failed");
   } else {
-    Serial.print(F("The new dynamic model is: "));
+    Serial.print("GNSS: dynamic model is ");
     Serial.println(newDynamicModel);
   }
-  myGNSS.setNavigationFrequency(4);  //Produce two solutions per second, GPS+GAL+BDS B1C+GLO
+  myGNSS.setNavigationFrequency(1);  //Produce two solutions per second, GPS+GAL+BDS B1C+GLO
+  myGNSS.setAutoPVT(true);
+
   myGNSS.setI2COutput(COM_TYPE_UBX);
   myGNSS.saveConfiguration();
 }
@@ -108,6 +114,8 @@ void Bat_temp_setup() {
 }
 */
 
+
+/*
 void setup_temp() {
   Serial.println(F("[TEMP] Initializing MAX31856 (Type K) on VSPI..."));
 
@@ -125,27 +133,25 @@ void setup_temp() {
     default: Serial.println(F("Unknown")); break;
   }
 }
+*/
 
 void task_temp() {
-  // Read the temperature
-  float temp = maxthermo.readThermocoupleTemperature();
-  //float internal = maxthermo.readColdJunctionTemperature();
 
+  float temp = thermocouple.readCelsius();
   // Update global variable for APRS/MAVLink
-  external_temp = temp;
-
-  // Check for faults (Open circuit, short to GND, etc.)
-  uint8_t fault = maxthermo.readFault();
-  if (fault) {
-    if (fault & MAX31856_FAULT_CJRANGE) Serial.println(F("Cold Junction Range Fault"));
-    if (fault & MAX31856_FAULT_TCRANGE) Serial.println(F("Thermocouple Range Fault"));
-    if (fault & MAX31856_FAULT_CJHIGH)  Serial.println(F("Cold Junction High Fault"));
-    if (fault & MAX31856_FAULT_CJLOW)   Serial.println(F("Cold Junction Low Fault"));
-    if (fault & MAX31856_FAULT_TCHIGH)  Serial.println(F("Thermocouple High Fault"));
-    if (fault & MAX31856_FAULT_TCLOW)   Serial.println(F("Thermocouple Low Fault"));
-    if (fault & MAX31856_FAULT_OVUV)    Serial.println(F("Over/Under Voltage Fault"));
-    if (fault & MAX31856_FAULT_OPEN)    Serial.println(F("Thermocouple Open Circuit"));
+  ;
+  if (isnan(temp)) {
+    Serial.println("Thermocouple fault(s) detected!");
+    uint8_t e = thermocouple.readError();
+    if (e & MAX31855_FAULT_OPEN) Serial.println("FAULT: Thermocouple is open - no connections.");
+    if (e & MAX31855_FAULT_SHORT_GND) Serial.println("FAULT: Thermocouple is short-circuited to GND.");
+    if (e & MAX31855_FAULT_SHORT_VCC) Serial.println("FAULT: Thermocouple is short-circuited to VCC.");
+  } else {
+    Serial.print("C = ");
+    Serial.println(temp);
   }
+
+  external_temp = temp;
 
   /* Serial.print(F("Hot: ")); Serial.print(temp);
   Serial.print(F(" C, Cold: ")); Serial.print(internal); Serial.println(F(" C"));
@@ -153,24 +159,51 @@ void task_temp() {
 }
 
 void read_gnss() {
+  myGNSS.getPVT();
+  fixType = myGNSS.getFixType();
 
+
+  fixType = myGNSS.getFixType();
+
+  // GPS gives unreliable timing when it loses fix, sometimes
+  // keeping time stuck. We don't use GPS time when this happens.
+  // Set to true if we should use GPS time no matter what
+  bool use_gps_time = true;
+  //if (fixType == 0) use_gps_time = false;        // No Fix
+  //else if (fixType == 1) use_gps_time = false;   // Dead reckoning
+  if (fixType == 2) use_gps_time = true;       // 2D
+  else if (fixType == 3) use_gps_time = true;  // 3D
+  else if (fixType == 4) use_gps_time = true;  // GNSS + Dead reckoning
+  else if (fixType == 5) use_gps_time = true;  // Time only
+
+  if (use_gps_time) {
+    tyear = myGNSS.getYear();
+    tmonth = myGNSS.getMonth() % 13;
+    tday = myGNSS.getDay() % 32;
+
+    thour = myGNSS.getHour() % 24;
+    tminute  = myGNSS.getMinute() % 60;
+    tsecond = myGNSS.getSecond() % 60;
+    tms = myGNSS.getMillisecond() % 1000;
+    tsync = millis();
+  }
 
   // 1. Latitude/Longitude: Keep as Decimal Degrees for the DDM conversion
-  glatitude = myGNSS.getLatitude() / 10000000.0f;
-  glongitude = myGNSS.getLongitude() / 10000000.0f;
+  glatitude = (float)myGNSS.getLatitude() / 10000000;
+  glongitude = (float)myGNSS.getLongitude() / 10000000;
 
   // 2. Altitude: Store in Meters
-  galtitude = myGNSS.getAltitude() / 1000.0f; 
+  galtitude = (float)myGNSS.getAltitude() / 1000;
 
   // 3. Speed: Store in km/h
   // Raw mm/s / 277.78 = km/h
-  gspeed = myGNSS.getGroundSpeed() / 277.78f; 
+  gspeed = (float)myGNSS.getGroundSpeed() * 3600 / 1000000;
 
   // 4. Heading: Degrees
-  gheading = myGNSS.getHeading() / 100000.0f;
+  gheading = (float)myGNSS.getHeading() / 100000;
 
   // Debugging
-  Serial.printf("Lat: %.6f, Lon: %.6f, Alt: %.1fm, Spd: %.1fkt\n", 
+  Serial.printf("Lat: %.6f, Lon: %.6f, Alt: %.1fm, Spd: %.1fkph\n",
                 glatitude, glongitude, galtitude, gspeed);
 }
 
@@ -180,8 +213,8 @@ void read_baro() {
   MS5611.read();
   //since oversampling of 8.12millis in effect do take note of interval of sensor reads
   ambient_temp = MS5611.getTemperature();  //reads ambient temp and passes to global variable thermocouple_temp
-  baro_press = MS5611.getPressure();            //reads baro press and passes to global variable baro_press
-  paltitudeMSL=MS5611.getAltitude();
+  baro_press = MS5611.getPressure();       //reads baro press and passes to global variable baro_press
+  paltitudeMSL = MS5611.getAltitude();
   Serial.print("Baro temperature");
   Serial.println(ambient_temp);
   Serial.print("Baro pressure:");

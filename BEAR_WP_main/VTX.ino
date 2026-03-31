@@ -4,6 +4,23 @@ void setup_mavlink() {
   Serial.println(F("[MAV] MAVLink UART2 Initialized at 57600"));
 }
 
+void setup_VTX_EN(){
+
+  pinMode(PIN_VTX_EN, OUTPUT);
+  digitalWrite(PIN_VTX_EN, LOW);
+}
+
+void enable_VTX(){
+  digitalWrite(PIN_VTX_EN, HIGH);
+}
+
+void disable_VTX(){
+  digitalWrite(PIN_VTX_EN, LOW);
+
+
+}
+
+
 
 void task_mavlink_osd() {
   mavlink_message_t msg;

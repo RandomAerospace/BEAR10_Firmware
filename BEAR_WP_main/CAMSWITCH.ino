@@ -1,8 +1,8 @@
 void setup_cam_switch() {
-
+  pinMode(PIN_CAM_SWITCH, OUTPUT);
   // 1. Configure Hardware PWM Output (LEDC)
-  ledcSetup(ledcChannel, ledcFreq, ledcRes);
-  ledcAttachPin(PIN_CAM_SWITCH, ledcChannel);
+  ledcSetup(ledcChannel2, ledcFreq, ledcRes);
+  ledcAttachPin(PIN_CAM_SWITCH, ledcChannel2);
   
   Serial.println(F("[CAM] Camera Switcher Setup Complete (50Hz Output)"));
 }
@@ -25,5 +25,5 @@ void task_cam_switch() {
   // (target_pulse_us / 20000.0) * 8191
   uint32_t duty = (target_pulse_us * 8191) / 20000;
   
-  ledcWrite(ledcChannel, duty);
+  ledcWrite(ledcChannel2, duty);
 }

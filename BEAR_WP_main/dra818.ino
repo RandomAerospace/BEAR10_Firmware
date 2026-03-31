@@ -155,7 +155,7 @@ void setup_dra818() {
 
   pinMode(PIN_RAD_PW, OUTPUT);
   wake_dra818();
-  tune_dra818("144.3900");
+  tune_dra818("144.390");
 
   //Turn on module
   pinMode(PIN_RAD_PW, OUTPUT);
@@ -200,9 +200,12 @@ void RTTY_TX() {
 
   //Timed events start here
   switch (rttyState) {
+
     case RTTY_IDLE:
+      //enable_VTX();//ENABLE VTX DURING THIS TIM
       transmissionStarted = false;  // Reset flag when back in IDLE OR START
       if (currentTime - rttyStateStartTime >= RTTY_IDLE_TIME) {
+        //disable_VTX(); //DISABLE VTX BEFORE MOVINGTO TRANSMITTING STATE
         rttyState = RTTY_START;
         rttyStateStartTime = currentTime;
        
@@ -210,10 +213,11 @@ void RTTY_TX() {
       break;
 
     case RTTY_START:
-
+      
        
       Serial.println(F("[RTTY] Starting transmission process..."));
       if (currentTime - rttyStateStartTime >= RTTY_START_TIME) {
+        
         rttyState = RTTY_TRANSMITTING;
         rttyStateStartTime = currentTime;
         Serial.println(F("[RTTY] Beginning transmission..."));
@@ -224,28 +228,32 @@ void RTTY_TX() {
 
       if (!transmissionStarted) {  // transmissionStarted=True
         int tx_mode = 0;
-        //int tx_mode=frame_counter%2; //switch between 2 modes, aprs and rtty
+       
         //send report
         if (tx_mode == 0) {
-          bool use_gps = false;
+          /*
           if (fixType == 0) use_gps = false;        // No Fix
           else if (fixType == 1) use_gps = false;   // Dead reckoning
           else if (fixType == 2) use_gps = true;    // 2D
           else if (fixType == 3) use_gps = true;    // 3D
           else if (fixType == 4) use_gps = true;    // GNSS + Dead reckoning
           else if (fixType == 5) use_gps = false;   // Time only
+          */
+          bool use_gps=true;
 
           send_report(use_gps);
           transmissionStarted = true;
         }
+        
       }
+      task_cam_switch(); // <--- TRIGGER THE CAMERA SWITCH HERE
       //this will bring the the transmitter out of the transmission loop
       if (currentTime - rttyStateStartTime >= RTTY_TRANSMIT_TIME) {
         rttyState = RTTY_COOLDOWN;
         rttyStateStartTime = currentTime;
 
         frame_counter++; // Increment the counter
-        task_cam_switch(); // <--- TRIGGER THE CAMERA SWITCH HERE
+        
 
         Serial.print(F("[SYSTEM] Transmission finished. Switched to Camera "));
         Serial.println((frame_counter % 2) + 1);

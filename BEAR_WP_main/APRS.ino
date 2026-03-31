@@ -2,7 +2,7 @@
 
 void send_report(bool use_gps) {
   static uint8_t page = 0;
-  uint8_t packet[200];
+  uint8_t packet[250];
   uint8_t sz = 0;
 
   //temporary vlaues
@@ -21,7 +21,7 @@ void send_report(bool use_gps) {
 
   packet[sz++] = use_gps ? '@' : '>';
 
-  sz += sprintf((char*)&(packet[sz]), "%02d%02d%02d", tday % 32, thour % 60, tminute % 60);
+  sz += sprintf((char*)&(packet[sz]), "%02d%02d%02d", tday % 32, thour % 24, tminute % 60);
 
   if (use_gps) {
     packet[sz++] = 'z';
@@ -30,9 +30,11 @@ void send_report(bool use_gps) {
     tempf = glatitude;
     tempb = tempf >= 0;
     if (!tempb) tempf *= -1.0;
-    tempu8 = (uint8_t)tempf;
-    tempf = (tempf - tempu8) * 60.0;
-    sz += sprintf((char*)&(packet[sz]), "%02u%05.2f", tempu8 % 91, tempf);
+    tempu8 = tempf;
+    tempf -= tempu8;
+    tempf *= 60;
+    //tempu16 %= 91;
+    sz += sprintf((char*)&(packet[sz]), "%02d%05.2f", tempu8, tempf);
     packet[sz++] = tempb ? 'N' : 'S';
 
     packet[sz++] = '/';
@@ -42,21 +44,24 @@ void send_report(bool use_gps) {
     tempf = glongitude;
     tempb = tempf >= 0;
     if (!tempb) tempf *= -1.0;
-    tempu16 = (uint16_t)tempf;
-    tempf = (tempf - tempu16) * 60.0;
-    sz += sprintf((char*)&(packet[sz]), "%03u%05.2f", tempu16 % 181, tempf);
+    tempu16 = tempf;
+    tempf -= tempu16;
+    tempf *= 60;
+    tempu16 %= 181;
+    sz += sprintf((char*)&(packet[sz]), "%03d%05.2f", tempu16, tempf);
     packet[sz++] = tempb ? 'E' : 'W';
 
-    packet[sz++] = 'O'; // Balloon Symbol
+   
+    // Balloon symbol
+    packet[sz++] = 'O';
 
     sz += sprintf((char*)&(packet[sz]), "%03d", gheading % 360);
-
     packet[sz++] = '/';
 
-    // COURSE and SPEED (Standard APRS expects Knots here)
-    // Convert km/h to Knots just for this field: km/h / 1.852
-    uint16_t speed_knots = (uint16_t)(gspeed / 1.852f);
-    sz += sprintf((char*)&(packet[sz]), "%03u/%03u", (uint16_t)gheading % 360, speed_knots % 1000);
+    tempf = gspeed;
+    tempf /= 1.852;
+    tempu16 = tempf;
+    sz += sprintf((char*)&(packet[sz]), "%03d", tempu16 % 1000);
 
     thealti = galtitude; 
     } else {
@@ -82,12 +87,15 @@ void send_report(bool use_gps) {
   packet[sz++] = '/';
   packet[sz++] = 'A';
   packet[sz++] = '=';
-  uint32_t alt_feet = (uint32_t)(thealti * 3.28084f);
-  sz += sprintf((char*)&(packet[sz]), "%06u", alt_feet % 1000000);
 
-  // METRIC COMMENT SECTION
-  // This adds " 12345m 123km/h" to the end of your packet for human reading
-  sz += sprintf((char*)&(packet[sz]), " %um %ukph ", (uint32_t)thealti, (uint32_t)gspeed);
+  tempf = thealti;
+  tempf *= 3.280839895;
+  if (tempf <= 0.0) {
+    tempu32 = 0;
+  } else {
+    tempu32 = tempf;
+  }
+  sz += sprintf((char*)&(packet[sz]), "%06u", tempu32 % 1000000U);
 
   packet[sz++] = ' ';
 
@@ -114,8 +122,9 @@ void send_report(bool use_gps) {
       // V: Battery Voltage
       // H: Heater Status
       sz += sprintf((char*)&(packet[sz]), 
-                    "B:%+05.1f V:%04.2fV H:%c ", 
-                    bat_temp, BV, heaterOn ? 'H' : 'X');
+                    "V:%05.2f I:%05.3f C:%c ", 
+                    BV, Current, cutterOn ? 'C' : 'X');
+      break;
   }
   if (++page == 2) {
     page = 0;

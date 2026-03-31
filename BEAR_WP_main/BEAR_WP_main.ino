@@ -12,15 +12,13 @@ bool freefall=false;
 
 
 //CUTTER CONFIG
-const float CUT_ALTITUDE = 30000 * 1000.0f;  //input as  meters, this will be converted to mm
+const float CUT_ALTITUDE = 30000;  //input as  meters, Agreed standard unit)
+//const float CUT_ALTITUDE = 0;  //input as  meters, Agreed standard unit)
 bool cutterOn = false;                       //for use in telemetry only
 const unsigned long CUT_DURATION = 15000;    //cut duration in ms
 
-#define TEMP_SP_HIGH_DEGC 15.0f
-#define TEMP_SP_LOW_DEGC 10.0f
-
 //timing variables
-const unsigned long sensor_interval = 250;  // read sensors every 100ms
+const unsigned long sensor_interval = 2000;  // read sensors every 100ms
 const unsigned long setup_interval = 2000;
 const unsigned long GNSS_interval = 1000;  //poll GNSS every 1 second
 const unsigned long Bat_temp_interval = 800;
@@ -95,6 +93,7 @@ const char usePosAcc[] = "pacc=60000;";       // Use a position accuracy of 6000
 SFE_UBLOX_GNSS myGNSS;
 
 #include "time.h"
+
 // The Network Time Protocol Servers, ntpServer is main, the rest are back ups
 const char* ntpServer = "time.nist.gov";
 const char* ntpServer_01 = "1.pool.ntp.org";
@@ -120,17 +119,18 @@ uint16_t gheading = 0;
 //RTC stuff [RBF]
 uint16_t tyear=2026;
 uint8_t tmonth=3;
-uint8_t tday=24;
-uint16_t thour = 0;
-uint16_t tminute = 0;
-uint16_t tsecond = 0;
-uint16_t tms = 0;
+uint8_t tday=28;
+uint16_t thour = 6;
+uint16_t tminute = 6;
+uint16_t tsecond = 6;
+uint16_t tms = 6;
 unsigned long long tsync = 0;
 
 
 //CAM SWITCH PWM SETTINGS
 // Hardware PWM Settings
-const int ledcChannel = 0;
+const int ledcChannel = 0; //APRS
+const int ledcChannel2= 2; //vtx switcher 
 const int ledcFreq = 50;      // 50Hz (20ms period)
 const int ledcRes = 13;       // 13-bit resolution (0-8191)
 
@@ -163,8 +163,8 @@ uint16_t baro_press = 0;
 //UART pins (header pins) remmeber to pin matrix
 //purpose is to serve as UART bridge with arduino
 //THIS IS THE SDA/SCL ON THE 1X06 JST HEADER
-#define UART_TX 32 //I2C SDA
-#define UART_RX 33 //I2C SCL
+#define I2C2_SDA 32 //I2C SDA
+#define I2C2_SCL 33 //I2C SCL
 
 //Mavlink
 #define UART2_TX 16
@@ -174,10 +174,10 @@ uint16_t baro_press = 0;
 #define PIN_CAM_SWITCH 26
 
 //VTX_EN PIN
-#define PIN_VTX_EN 35
+#define PIN_VTX_EN 4
 
 //CUTTER EN PIN
-#define PIN_CUTTER 34
+#define PIN_CUTTER 5
 
 //DRA818V PIN MAPPING
 #define PIN_RAD_PTT 2
@@ -192,23 +192,28 @@ uint16_t baro_press = 0;
 // include the libraries
 #include <SPI.h>
 #include <Wire.h>
+#include <Adafruit_I2CDevice.h>
+#include <Adafruit_I2CRegister.h>
+
 
 
 //temperature sensr
-#include <Adafruit_MAX31856.h>
+#include "Adafruit_MAX31855.h"
 // Initialize with Software SPI to force the specific VSPI pins
-Adafruit_MAX31856 maxthermo = Adafruit_MAX31856(VSPI_SS, VSPI_MOSI, VSPI_MISO, VSPI_SCK);
+//Adafruit_MAX31855 maxthermo = Adafruit_MAX31855(VSPI_SS, VSPI_MOSI, VSPI_MISO, VSPI_SCK);
+Adafruit_MAX31855 thermocouple( VSPI_SCK, VSPI_SS, VSPI_MISO);
 
+//CURRENT SENSE
+#include <Adafruit_INA228.h>
+// Create the second I2C instance (using hardware I2C peripheral 1)
+TwoWire I2C2_Bus = TwoWire(1);
 
-
-
-#include <Adafruit_I2CDevice.h>
-#include <Adafruit_I2CRegister.h>
+#define INA228_ADDR          0x45
+Adafruit_INA228 ina228 = Adafruit_INA228();
 
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include "secrets.h"
-
 
 //mavlink
 #include <MAVLink.h>
@@ -263,10 +268,10 @@ void setup() {
 
 
   Serial.begin(115200);
-  if (currentMillis - previousMillis >= setup_interval) {
-    previousMillis = currentMillis;
-    Serial.println("");
-  }  // Small delay to avoid reset during SPI initialization
+  setup_mavlink();
+  Serial.println("Serial 1 started at 9600 baud rate");
+  
+  delay(10);
   Serial.print("Show SPI pins");
   Serial.print("MOSI: ");
   Serial.println(MOSI);
@@ -276,16 +281,18 @@ void setup() {
   Serial.println(SCK);
   Serial.print("SS: ");
   Serial.println(SS);
-  if (currentMillis - previousMillis >= setup_interval) {
-    previousMillis = currentMillis;
-    Serial.println("");
-  }  // Small delay to avoid reset during SPI initialization
+  delay(10);
+  // Small delay to avoid reset during SPI initialization
 
 
   //initialise i2c
   Serial.print("Initialising I2c");
-  Wire.begin();
+  Wire.begin(I2C_SDA,I2C_SCL);
   Wire.setClock(100000);  // Set to 10 kHz to clock stretch the MCP9600
+  // Start I2C2 at 100kHz
+  I2C2_Bus.begin(I2C2_SDA, I2C2_SCL);
+  I2C2_Bus.setClock(100000);
+
 
   //initialise i2c for asm330lhhtr
 
@@ -302,36 +309,32 @@ void setup() {
   
   Serial.println("Configuration complete.");
   */
-
+  
   Assistnow_setup(); 
   GNSS_setup();
-  //thermocouple_setup();
-  //radio_setup();
-  baro_setup();
-  //Bat_temp_setup();
-  //setup_heater();
-  //Cutter_setup();
-  setup_cam_switch();
-  setup_temp();
-  setup_uart_bridge();
-
   // Will transmit boot message, ensure dra818 is ready
   //setup DRA818 first before APRS.
   Serial.println("DRA818");
   setup_dra818();
   Serial.println("APRS");
   setup_aprs();
+  //setup_temp();
+  
+  setup_cam_switch();
+  baro_setup();
 
+  setup_currentsense();
+  Cutter_setup();
   Serial.print("All setup");
 
-  setup_mavlink();
+  
 }
 
 void loop() {
 
   //task_heater();
 
-  //Cutter();
+  Cutter();
 
 
   //checks the battery temp every 5s, changes state every 5s, also checks if RTTY is going to be transmitted.
@@ -359,21 +362,23 @@ void updateSensors() {
   static unsigned long previousMillis = 0;
   static unsigned long previousGNSSMillis = 0;
   static unsigned long previousBATTEMPMillis = 0;
+  
   // Break out early if we're not in RTTY_IDLE state
   if (rttyState != RTTY_IDLE) {
     return;
   }
   if (currentMillis - previousGNSSMillis >= GNSS_interval) {  //this happens every 1000ms
     read_gnss();
-    handle_uart_receiver();
+    
     previousGNSSMillis = currentMillis;
   }
 
   if (currentMillis - previousMillis >= sensor_interval) {  //this happens every 250ms
     read_baro();
     task_temp();
-    //readIMU();
-    //read_battery();
+    read_currentsense();
+    
+
     previousMillis = currentMillis;
   }
   /*

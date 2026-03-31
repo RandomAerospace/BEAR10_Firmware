@@ -13,7 +13,7 @@ void Cutter(){
   //only changes the state
   if (curr_time - last_time >= 1500) {
     last_time = curr_time; 
-    if (galtitude>=CUT_ALTITUDE){
+    if (galtitude>=CUT_ALTITUDE){ //FYI in meters
       cut_count++;
       Serial.print("Cutter count:");
       Serial.println(cut_count);
