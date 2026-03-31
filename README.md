@@ -1,2 +1,2 @@
 # BEAR10_Firmware
-80 buad RTTY with basic CRC packet radio for weather balloon telemetry. Uses a seperate sensor board for GNSS, Barometer and thermocouple .
+VHF APRS+GNSS board, flight proven except cutter logic that requires testing
